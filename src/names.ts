@@ -33,6 +33,13 @@ export function table(names: Iterable<string>): Table {
 }
 
 /**
+ * The {@link Table} slot of the name last returned by {@link intern}, or
+ * `-1` when that name was not known. Lets callers keep data per known name
+ * in an array beside the table, without a lookup by string.
+ */
+export let slot = -1;
+
+/**
  * The lowercase tag name in `source` from `from` to `to`. Names in `known`
  * return one shared string, so the parser makes no new string, and
  * lookups reuse its cached hash.
@@ -52,7 +59,13 @@ export function intern(
 	let length = to - from;
 	for (let k = h & MASK; ; k = (k + 1) & MASK) {
 		let name = known[k];
-		if (name === undefined) return source.slice(from, to).toLowerCase();
-		if (name.length === length && same(source, from, name)) return name;
+		if (name === undefined) {
+			slot = -1;
+			return source.slice(from, to).toLowerCase();
+		}
+		if (name.length === length && same(source, from, name)) {
+			slot = k;
+			return name;
+		}
 	}
 }

@@ -215,6 +215,114 @@ describe("build()", () => {
 		}
 	});
 
+	let spellings = (name: string) => [
+		name,
+		name.toLowerCase(),
+		name.toUpperCase(),
+		[...name].map((c, i) => (i % 2 ? c.toUpperCase() : c.toLowerCase())).join(""),
+	];
+
+	let shape = (t: tree.Tree, id: number): string => {
+		if (t.kind[id] === tree.TEXT) return JSON.stringify(values.value(t, id));
+		if (t.kind[id] !== tree.ELEMENT) return "#";
+		let inner: string[] = [];
+		for (let x = id + 1; x < t.stop[id]; x = t.stop[x]) inner.push(shape(t, x));
+		return `${t.name[id]}(${inner.join(",")})`;
+	};
+
+	let top = (html: string, foreign?: boolean): string => {
+		let t = tree.build(html, foreign);
+		let output: string[] = [];
+		for (let x = 1; x < t.kind.length; x = t.stop[x]) output.push(shape(t, x));
+		return output.join(",");
+	};
+
+	test("void elements ignore case, in start and end tags", () => {
+		for (let name of tree.VOID) {
+			for (let spelling of spellings(name)) {
+				expect(top(`<div><${spelling} a=1>x</div>`)).toBe(`div(${name}(),"x")`);
+				let end = name === "br" ? "br()," : "";
+				expect(top(`<div></${spelling}>x</div>`)).toBe(`div(${end}"x")`);
+			}
+		}
+	});
+
+	test("raw text elements ignore case, outside foreign content", () => {
+		for (let name of tree.RAW) {
+			for (let spelling of spellings(name)) {
+				let html = `<${spelling}><b>&amp;</${spelling}><i>`;
+				let text = values.LITERAL.has(name) ? "<b>&amp;" : "<b>&";
+				let rest = name === "plaintext" ? `${text}</${spelling}><i>` : text;
+				let after = name === "plaintext" ? "" : ",i()";
+				expect(top(html)).toBe(`${name}(${JSON.stringify(rest)})${after}`);
+				expect(top(`<svg>${html}`)).toBe(`svg(${name}(b("&")),i())`);
+			}
+		}
+	});
+
+	test("implied end tags ignore case", () => {
+		expect(top("<UL><LI>a<Li>b</UL>")).toBe('ul(li("a"),li("b"))');
+		expect(top("<P>a<DIV>b</DIV>")).toBe('p("a"),div("b")');
+		expect(top("<TABLE><TR><TD>a<TD>b<TR><TH>c</TABLE>")).toBe(
+			'table(tr(td("a"),td("b")),tr(th("c")))',
+		);
+		expect(top("<SELECT><OPTION>a<OPTGROUP><OPTION>b</SELECT>")).toBe(
+			'select(option("a"),optgroup(option("b")))',
+		);
+		expect(top("<FORM><Form><INPUT></FORM>")).toBe("form(input())");
+		expect(top("<H1>a<h2>b")).toBe('h1("a"),h2("b")');
+	});
+
+	test("foreign and integration elements ignore case", () => {
+		for (let name of ["svg", "math"]) {
+			for (let spelling of spellings(name)) {
+				expect(top(`<${spelling}><path/>x</${spelling}>`)).toBe(`${name}(path(),"x")`);
+				expect(top(`<${spelling}/><p>x`)).toBe(`${name}(),p("x")`);
+			}
+		}
+		for (let name of ["mi", "mo", "mn", "ms", "mtext", "annotation-xml"]) {
+			for (let spelling of spellings(name)) {
+				expect(top(`<math><${spelling}><b/>x</${spelling}></math>`)).toBe(
+					`math(${name}(b("x")))`,
+				);
+			}
+		}
+		for (let spelling of spellings("foreignObject")) {
+			expect(top(`<svg><${spelling}><b/>x</svg><b/>y`)).toBe(
+				'svg(foreignObject(b("x"))),b("y")',
+			);
+		}
+		for (let spelling of spellings("desc")) {
+			expect(top(`<svg><${spelling}><b/>x</${spelling}></svg>`)).toBe('svg(desc(b("x")))');
+		}
+	});
+
+	test("SVG names keep their case only in foreign content", () => {
+		for (let [lower, name] of tree.SVG) {
+			for (let spelling of spellings(name)) {
+				expect(top(`<svg><${spelling}></${spelling}></svg>`)).toBe(`svg(${name}())`);
+				expect(top(`<${spelling}></${spelling}>`)).toBe(`${lower}()`);
+				expect(top(`<${spelling}/>`, true)).toBe(`${name}()`);
+			}
+		}
+	});
+
+	test("image is img outside foreign content", () => {
+		for (let spelling of spellings("image")) {
+			expect(top(`<p><${spelling} src=x>a`)).toBe('p(img(),"a")');
+			expect(top(`<svg><${spelling} href=x />a</svg>`)).toBe('svg(image(),"a")');
+			expect(top(`<p></${spelling}>a`)).toBe('p("a")');
+		}
+	});
+
+	test("unknown and custom names have no flags", () => {
+		for (let name of ["x-br", "brr", "scripts", "c-code-block", "svgx", "imgs", "my-p"]) {
+			for (let spelling of spellings(name)) {
+				expect(top(`<${spelling}><p>a</${spelling}>b`)).toBe(`${name}(p("a")),"b"`);
+			}
+		}
+	});
+
 	test("subtrees are contiguous", () => {
 		for (let html of Object.values(CASES)) {
 			let t = tree.build(html);

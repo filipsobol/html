@@ -1,4 +1,4 @@
-import { intern, table } from "./names";
+import { intern, slot, table } from "./names";
 
 export const DOCUMENT = 0;
 export const ELEMENT = 1;
@@ -232,6 +232,18 @@ for (let [names, flag] of [
 	[IMPLIES.keys(), HAS_IMPLIES],
 ] as const) {
 	for (let name of names) FLAGS.set(name, (FLAGS.get(name) ?? 0) | flag);
+}
+
+/** The {@link FLAGS} of each name in {@link KNOWN}, by slot. */
+const BITS = Uint8Array.from(KNOWN, (name) =>
+	name === undefined ? 0 : (FLAGS.get(name) ?? 0),
+);
+
+/**
+ * The {@link FLAGS} of `name`, just returned by {@link intern}.
+ */
+function flagsOf(name: string): number {
+	return slot === -1 ? (FLAGS.get(name) ?? 0) : BITS[slot];
 }
 
 function isAlpha(c: number): boolean {
@@ -510,9 +522,16 @@ export function build(source: string, foreign?: boolean): Tree {
 			)
 				j++;
 			let name = intern(KNOWN, source, lt + 2, j);
-			if (alien) name = SVG.get(name) ?? name;
+			let flags = flagsOf(name);
+			if (alien) {
+				let svg = SVG.get(name);
+				if (svg !== undefined) {
+					name = svg;
+					flags = FLAGS.get(svg) ?? 0;
+				}
+			}
 
-			if ((FLAGS.get(name) ?? 0) & IS_VOID) {
+			if (flags & IS_VOID) {
 				if (name === "br") add(ELEMENT, "br", lt, e + 1, e + 1, e + 1, e);
 				continue;
 			}
@@ -552,12 +571,20 @@ export function build(source: string, foreign?: boolean): Tree {
 		i = text = k;
 
 		let name = intern(KNOWN, source, lt + 1, j);
-		if (alien) name = SVG.get(name) ?? name;
-		else if (name === "image") name = "img";
+		let flags = flagsOf(name);
+		if (alien) {
+			let svg = SVG.get(name);
+			if (svg !== undefined) {
+				name = svg;
+				flags = FLAGS.get(svg) ?? 0;
+			}
+		} else if (name === "image") {
+			name = "img";
+			flags = FLAGS.get(name) ?? 0;
+		}
 
 		if (name === "form" && stack.some((x) => names[x] === "form")) continue;
 
-		let flags = FLAGS.get(name) ?? 0;
 		if (flags & HAS_IMPLIES) {
 			let implies = IMPLIES.get(name)!;
 			while (stack.length > 1 && implies.has(names[stack[stack.length - 1]])) {

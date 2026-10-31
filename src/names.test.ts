@@ -26,3 +26,21 @@ describe("intern()", () => {
 		expect(intern("<ÄBC>", 1, 4)).toBe("äbc");
 	});
 });
+
+describe("slot", () => {
+	test("should point at the known name, or be -1", () => {
+		for (let [source, name] of [
+			["<DIV>", "div"],
+			["<ForeignObject>", "foreignobject"],
+			["<h1>", "h1"],
+			["<di>", "di"],
+		]) {
+			expect(intern(source, 1, source.length - 1)).toBe(name);
+			expect(KNOWN[names.slot]).toBe(name);
+		}
+		for (let source of ["<My-Element>", "<divx>", "<d>", "<ÄBC>"]) {
+			intern(source, 1, source.length - 1);
+			expect(names.slot).toBe(-1);
+		}
+	});
+});
