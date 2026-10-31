@@ -4,6 +4,7 @@ import { parseDocument } from "htmlparser2";
 
 import * as select from "./select";
 import * as tree from "./tree";
+import * as values from "./values";
 
 const HTML = `<!doctype html>
 <html lang="en-US">
@@ -88,6 +89,66 @@ const SELECTORS = [
 	"p, li",
 ];
 
+const ATTRIBUTES = `<div id=d1 data-v="foo bar" lang="en-US" title='a"b' data-e="&lt;&amp;" DATA-MIXED="Value" data-empty="" data-bare></div>
+<div id=d2 data-v="foobar" Lang=en data-x=unq/uoted data-q='>' data-lt="<p>" data-gt=a>b</div>
+<div id=d3 data-v=" foo " lang="EN-us" data-dup="1" data-DUP="2" data-dup=3></div>
+<svg id=s1 viewBox="0 0 1 1"><clipPath id=c1 clipPathUnits=userSpaceOnUse></clipPath></svg>`;
+
+/** Each selector and the `id` of every element it matches. */
+const OPERATORS: Record<string, string[]> = {
+	"[data-v]": ["d1", "d2", "d3"],
+	"[data-v=foobar]": ["d2"],
+	'[data-v="foo bar"]': ["d1"],
+	"[data-v='foo bar']": ["d1"],
+	"[data-v~=foo]": ["d1", "d3"],
+	"[data-v~=bar]": ["d1"],
+	'[data-v~="foo bar"]': [],
+	"[data-v~='']": [],
+	"[data-v^=foo]": ["d1", "d2"],
+	"[data-v^=' ']": ["d3"],
+	"[data-v^='']": [],
+	"[data-v$=bar]": ["d1", "d2"],
+	"[data-v$='']": [],
+	'[data-v*="o b"]': ["d1"],
+	"[data-v*=oo]": ["d1", "d2", "d3"],
+	"[data-v*='']": [],
+	"[lang|=en]": ["d1", "d2"],
+	"[lang|=EN]": ["d3"],
+	"[lang|=en i]": ["d1", "d2", "d3"],
+	'[lang="en-us" i]': ["d1", "d3"],
+	'[lang="en-us" s]': [],
+	'[lang="en-US" s]': ["d1"],
+	"[LANG=en]": ["d2"],
+	"[DATA-MIXED=Value]": ["d1"],
+	"[data-mixed=value]": [],
+	"[data-mixed=VALUE i]": ["d1"],
+	"[data-mixed^=VA i]": ["d1"],
+	'[data-e="<&"]': ["d1"],
+	'[data-e="&lt;&amp;"]': [],
+	"[title='a\"b']": ["d1"],
+	"[data-empty]": ["d1"],
+	'[data-empty=""]': ["d1"],
+	"[data-bare='']": ["d1"],
+	"[data-bare|='']": ["d1"],
+	'[data-x="unq/uoted"]': ["d2"],
+	"[data-q='>']": ["d2"],
+	'[data-lt="<p>"]': ["d2"],
+	"[data-gt=a]": ["d2"],
+	"[b]": [],
+	"[data-dup=1]": ["d3"],
+	"[data-dup=2]": [],
+	"[data-dup=3]": [],
+	"[ data-v = foobar ]": ["d2"],
+	"#d1[data-bare][data-empty]": ["d1"],
+	"div:not([data-v^=foo])": ["d3"],
+	"[viewbox]": ["s1"],
+	"[viewBox='0 0 1 1']": ["s1"],
+	"[clippathunits=userSpaceOnUse]": ["c1"],
+	"[CLIPPATHUNITS=userspaceonuse i]": ["c1"],
+	"svg [id]": ["c1"],
+	"[id^=d][id$='2']": ["d2"],
+};
+
 describe("select", () => {
 	let ours = tree.build(HTML);
 	let theirs = parseDocument(HTML, { withStartIndices: true });
@@ -99,6 +160,22 @@ describe("select", () => {
 				.all(ours, 0, select.compile(selector))
 				.map((id) => ours.start[id]);
 			expect(actual).toEqual(expected);
+		});
+	}
+
+	for (let [selector, expected] of Object.entries(OPERATORS)) {
+		test(`matches attributes :: ${selector}`, () => {
+			let t = tree.build(ATTRIBUTES);
+			let ids = select
+				.all(t, 0, select.compile(selector))
+				.map((id) => values.attribute(t, id, "id"));
+			expect(ids).toEqual(expected);
+			// The same once the attributes are parsed and cached.
+			for (let id = 1; id < t.kind.length; id++) values.pairs(t, id);
+			let again = select
+				.all(t, 0, select.compile(selector))
+				.map((id) => values.attribute(t, id, "id"));
+			expect(again).toEqual(expected);
 		});
 	}
 
