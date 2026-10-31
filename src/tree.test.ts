@@ -323,6 +323,94 @@ describe("build()", () => {
 		}
 	});
 
+	let columns = (t: tree.Tree) =>
+		JSON.stringify([
+			t.name,
+			...[t.kind, t.parent, t.stop, t.start, t.end, t.from, t.to, t.head].map(
+				(x) => Array.from(x),
+			),
+		]);
+
+	/** Inputs of every size, from empty to more nodes than the parser keeps room for. */
+	let sizes = () => [
+		"",
+		"x",
+		"<p>",
+		"<b>".repeat(100_000),
+		"<p>a</p>".repeat(5_000),
+		"x".repeat(2_000_000),
+		...Object.values(CASES),
+	];
+
+	test("builds the same tree after any other build", () => {
+		let list = sizes();
+		let expected = list.map((html) => columns(tree.build(html)));
+		for (let i = 0; i < list.length; i++) {
+			for (let j of [0, 3, 4, 5, i + 1]) {
+				if (j >= list.length) continue;
+				tree.build(list[j]);
+				expect(columns(tree.build(list[i]))).toBe(expected[i]);
+				expect(columns(tree.build(list[i], true))).toBe(columns(tree.build(list[i], true)));
+			}
+		}
+	});
+
+	test("trees never share or change their columns", () => {
+		let list = sizes();
+		let trees = list.map((html) => tree.build(html));
+		let before = trees.map(columns);
+		for (let html of list) tree.build(html);
+		expect(trees.map(columns)).toEqual(before);
+		let buffers = new Set(trees.map((t) => t.kind.buffer));
+		expect(buffers.size).toBe(trees.length);
+		for (let t of trees) {
+			for (let column of [t.parent, t.stop, t.start, t.end, t.from, t.to, t.head]) {
+				expect(column.buffer).toBe(t.kind.buffer);
+				expect(column.length).toBe(t.kind.length);
+			}
+		}
+	});
+
+	test("columns are exact for empty and huge inputs", () => {
+		let empty = tree.build("");
+		expect(columns(empty)).toBe(JSON.stringify([[""], [0], [-1], [1], [0], [0], [0], [0], [0]]));
+		let html = "<b>".repeat(100_000);
+		let t = tree.build(html);
+		expect(t.kind.length).toBe(100_001);
+		for (let id = 1; id < t.kind.length; id++) {
+			if (t.kind[id] !== tree.ELEMENT || t.parent[id] !== id - 1) throw new Error(`node ${id}`);
+			if (t.start[id] !== 3 * (id - 1) || t.from[id] !== 3 * id || t.end[id] !== html.length) {
+				throw new Error(`range ${id}`);
+			}
+			if (t.stop[id] !== t.kind.length || t.head[id] !== 3 * id - 1) throw new Error(`stop ${id}`);
+		}
+	});
+
+	test("builds nested in a build, like from a patched String method, get their own columns", () => {
+		let outer = "<b>".repeat(2_000) + Object.values(CASES).join("");
+		let inner = ["<p>a<p>b", "<b>".repeat(5_000), "", outer.slice(0, 500)];
+		let expected = columns(tree.build(outer));
+		let nested = inner.map((html) => columns(tree.build(html)));
+		let indexOf = String.prototype.indexOf;
+		let calls = 0;
+		let results: string[] = [];
+		String.prototype.indexOf = function (this: string, ...args: [string, number?]) {
+			if (this === outer && args[0] === "<" && [1, 50, 400, 1_500].includes(++calls)) {
+				results.push(columns(tree.build(inner[results.length])));
+			}
+			return indexOf.apply(this, args);
+		};
+		let actual: string;
+		try {
+			actual = columns(tree.build(outer));
+		} finally {
+			String.prototype.indexOf = indexOf;
+		}
+		expect(results).toHaveLength(nested.length);
+		expect(results.every((x, i) => x === nested[i])).toBe(true);
+		expect(actual === expected).toBe(true);
+	});
+
 	test("subtrees are contiguous", () => {
 		for (let html of Object.values(CASES)) {
 			let t = tree.build(html);

@@ -60,8 +60,9 @@ export function intern(
 	for (let k = h & MASK; ; k = (k + 1) & MASK) {
 		let name = known[k];
 		if (name === undefined) {
+			let output = source.slice(from, to).toLowerCase();
 			slot = -1;
-			return source.slice(from, to).toLowerCase();
+			return output;
 		}
 		if (name.length === length && same(source, from, name)) {
 			slot = k;
