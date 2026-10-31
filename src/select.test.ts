@@ -149,6 +149,83 @@ const OPERATORS: Record<string, string[]> = {
 	"[id^=d][id$='2']": ["d2"],
 };
 
+const CLASSES = `<p id=p1 class="foo"></p><p id=p2 class="foobar"></p>
+<p id=p3 class="a-foo foo-b"></p><p id=p4 class="\tfoo\n"></p>
+<p id=p5 class="x\fFOO foo foo"></p><p id=p6 class=""></p><p id=p7 class></p>
+<p id=p8 CLASS="bar" class="foo"></p><p id=p9 class="foo&#9;bar"></p>
+<p id=p10 class="foo&nbsp;bar"></p><p id=p11 class="a b"></p><p id=p12 class=Foo></p>
+<p id=p13 class=" \r\nfoo\u2028bar\u3000 "></p><p id=p14 class="foo\u00adbar"></p>`;
+
+/** Each class selector and the `id` of every element it matches. */
+const TOKENS: Record<string, string[]> = {
+	".foo": ["p1", "p4", "p5", "p9", "p10", "p13"],
+	".foobar": ["p2"],
+	".oo": [],
+	".fo": [],
+	".a-foo": ["p3"],
+	".foo-b": ["p3"],
+	".FOO": ["p5"],
+	".Foo": ["p12"],
+	".bar": ["p8", "p9", "p10", "p13"],
+	".foo.bar": ["p9", "p10", "p13"],
+	".foo.foo": ["p1", "p4", "p5", "p9", "p10", "p13"],
+	".x.FOO.foo": ["p5"],
+	".a": ["p11"],
+	".a\\ b": [],
+	".a\\20 b": [],
+	".\\66 oo": ["p1", "p4", "p5", "p9", "p10", "p13"],
+	".foo\\ad bar": ["p14"],
+	"[class~=foo]": ["p1", "p4", "p5", "p9", "p10", "p13"],
+	"[class~=foo i]": ["p1", "p4", "p5", "p9", "p10", "p12", "p13"],
+	'[class~="a b"]': [],
+	'[class="a b"]': ["p11"],
+	"[class='']": ["p6", "p7"],
+	"[class]:not(.foo)": ["p2", "p3", "p6", "p7", "p8", "p11", "p12", "p14"],
+	"p:not([class])": [],
+};
+
+/** A seeded generator, so failures repeat. */
+function random(seed: number): () => number {
+	return () => {
+		seed = (seed + 0x6d2b79f5) | 0;
+		let x = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+		x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
+		return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+	};
+}
+
+describe("token()", () => {
+	let split = (list: string, name: string) => list.split(/\s+/).includes(name);
+
+	test("splits on every code unit like /\\s+/", () => {
+		for (let c = 0; c < 0x10000; c++) {
+			let ch = String.fromCharCode(c);
+			for (let list of [`a${ch}b`, `${ch}b`, `b${ch}`, `${ch}`, `${ch}${ch}b${ch}`]) {
+				for (let name of ["b", "a", ch, `a${ch}b`, `${ch}b`]) {
+					if (select.token(list, name) !== split(list, name)) {
+						throw new Error(`token(${JSON.stringify(list)}, ${JSON.stringify(name)})`);
+					}
+				}
+			}
+		}
+	});
+
+	test("matches split() on random lists", () => {
+		let next = random(7);
+		let parts = ["a", "b", "ab", "-", "a-b", " ", "\t", "\n", "\f", "\r", "\v", "\u00a0", "\u2028", "\u3000", "\ufeff", "\u200b", "\ud83d\ude00", "\ud83d"];
+		let pick = (count: number) => {
+			let output = "";
+			for (let i = 0; i < count; i++) output += parts[Math.floor(next() * parts.length)];
+			return output;
+		};
+		for (let n = 0; n < 20000; n++) {
+			let list = pick(Math.floor(next() * 8));
+			let name = pick(1 + Math.floor(next() * 3));
+			expect(select.token(list, name)).toBe(split(list, name));
+		}
+	});
+});
+
 describe("select", () => {
 	let ours = tree.build(HTML);
 	let theirs = parseDocument(HTML, { withStartIndices: true });
@@ -176,6 +253,16 @@ describe("select", () => {
 				.all(t, 0, select.compile(selector))
 				.map((id) => values.attribute(t, id, "id"));
 			expect(again).toEqual(expected);
+		});
+	}
+
+	for (let [selector, expected] of Object.entries(TOKENS)) {
+		test(`matches class tokens :: ${selector}`, () => {
+			let t = tree.build(CLASSES);
+			let ids = select
+				.all(t, 0, select.compile(selector))
+				.map((id) => values.attribute(t, id, "id"));
+			expect(ids).toEqual(expected);
 		});
 	}
 

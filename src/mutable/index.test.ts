@@ -72,6 +72,21 @@ describe("parse()", () => {
 		}
 	});
 
+	test("matches the immutable variant for attribute and class selectors", () => {
+		let source = `<div CLASS=" a\tb " class=c data-X="1 2" lang=en-GB title='x"y' e="&lt;&gt;"><p class="a-b ab"></p><svg viewBox="0 0 1 1"><clipPath clipPathUnits=objectBoundingBox /></svg><p class=b data-x=2 data-x=3>t</p></div>`;
+		let selectors = [".a", ".b", ".c", ".a.b", ".ab", ".a-b", "[class~=b]", "[data-x]", "[data-x='1 2']", "[data-x~='2']", "[data-x|=1]", "[data-x^='1 ']", "[data-x$=2]", "[data-x*=' ']", "[data-x=3]", "[lang|=EN i]", "[title='x\"y']", "[e='<>']", "[viewbox]", "[clippathunits^=object]", "div > .b", ":not(.a)", "[CLASS]"];
+		let a = html.parse(source);
+		for (let built of [false, true]) {
+			let b = mutable.parse(source);
+			if (built) for (let el of b.all("*")) el.attributes;
+			for (let selector of selectors) {
+				expect(b.all(selector).map((x) => x.start)).toEqual(
+					a.all(selector).map((x) => x.start),
+				);
+			}
+		}
+	});
+
 	test("reads the same values as the immutable variant", () => {
 		let a = html.parse(SOURCE);
 		let b = mutable.parse(SOURCE);
