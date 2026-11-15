@@ -207,6 +207,36 @@ describe("build()", () => {
 		);
 	});
 
+	test("/> closes integration points in foreign content", () => {
+		expect(
+			outline(
+				'<svg viewBox="0 0 20 20"><title/><path d="M1"/><circle r="3"/></svg>',
+			),
+		).toBe("svg(title(),path(),circle())");
+		expect(outline("<SVG><DESC/><FOREIGNOBJECT/><G/>x</SVG>")).toBe(
+			"svg(desc(),foreignObject(),g(),x)",
+		);
+		expect(
+			outline(
+				"<math><mi/><mo/><mn/><ms/><mtext/><annotation-xml/><mi>x</mi></math>",
+			),
+		).toBe("math(mi(),mo(),mn(),ms(),mtext(),annotation-xml(),mi(x))");
+		expect(
+			outline(
+				"<svg><desc><mi/>x</mi><svg><g><title/><desc/><path/></g></svg></desc><title/><path/></svg>",
+			),
+		).toBe(
+			"svg(desc(mi(x),svg(g(title(),desc(),path()))),title(),path())",
+		);
+	});
+
+	test("/> does not close elements inside integration points", () => {
+		expect(
+			outline("<svg><foreignObject><title/>x</title></foreignObject></svg>"),
+		).toBe("svg(foreignObject(title(x)))");
+		expect(outline("<math><mi><mi/>x</mi></math>")).toBe("math(mi(mi(x)))");
+	});
+
 	test("comment, directive, and CDATA values follow browsers", () => {
 		let t = tree.build(
 			"<!x><?x?><!DOCTYPE html><![CDATA[c]]><svg><![CDATA[a&amp;<b>]]></svg>",
