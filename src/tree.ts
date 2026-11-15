@@ -261,6 +261,21 @@ function isSpace(c: number): boolean {
 	return c === 32 || c === 9 || c === 10 || c === 13 || c === 12;
 }
 
+/**
+ * Where a tag name that starts at `from` ends: at a space, `/`, `>`, or the
+ * end of the source.
+ */
+function nameEnd(source: string, from: number): number {
+	let n = source.length;
+	let j = from;
+	while (j < n) {
+		let c = source.charCodeAt(j);
+		if (isSpace(c) || c === 62 || c === 47) break;
+		j++;
+	}
+	return j;
+}
+
 /** Whether the last tag read by {@link tagEnd} ended with `/>`, outside a value. */
 let slash = false;
 
@@ -535,7 +550,10 @@ export function build(source: string, foreign?: boolean): Tree {
 		}
 
 		if (c === 47) {
-			let e = source.indexOf(">", lt + 2);
+			// Most end tags are like `</div>`, with `>` right after the name, so
+			// the name is read first, and `>` is only searched for if needed.
+			let j = nameEnd(source, lt + 2);
+			let e = source.charCodeAt(j) === 62 ? j : source.indexOf(">", j);
 			if (e === -1) {
 				if (lt + 2 >= n) break;
 				flush(lt);
@@ -554,13 +572,6 @@ export function build(source: string, foreign?: boolean): Tree {
 				continue;
 			}
 
-			let j = lt + 2;
-			while (
-				j < e &&
-				!isSpace(source.charCodeAt(j)) &&
-				source.charCodeAt(j) !== 47
-			)
-				j++;
 			let name = intern(KNOWN, source, lt + 2, j);
 			let cased = SVG.get(name);
 			if (alien) name = cased ?? name;
@@ -605,12 +616,7 @@ export function build(source: string, foreign?: boolean): Tree {
 			continue;
 		}
 
-		let j = lt + 2;
-		while (j < n) {
-			let ch = source.charCodeAt(j);
-			if (isSpace(ch) || ch === 62 || ch === 47) break;
-			j++;
-		}
+		let j = nameEnd(source, lt + 2);
 
 		let k = tagEnd(source, j);
 		if (k === -1) {
