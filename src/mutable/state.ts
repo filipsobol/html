@@ -591,7 +591,6 @@ export function inner(s: State): string {
 const matcher = select.engine<undefined, State>({
 	name: (_, s) => s.name,
 	attr(_, s, key) {
-		if (unread(s, key)) return values.lookup(s.tree!, s.id, key);
 		return attribute(s, key);
 	},
 	parent(_, s) {

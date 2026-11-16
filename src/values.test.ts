@@ -62,8 +62,8 @@ describe("spans", () => {
 	});
 });
 
-describe("lookup", () => {
-	test("finds the same values as pairs, parsed or not", () => {
+describe("attribute", () => {
+	test("reads values from cached pairs without building attribute records", () => {
 		let sources = HEADS.flatMap((head) =>
 			[">", "/>", " />"].map((close) => `<x${head}${close}</x>`),
 		);
@@ -72,14 +72,19 @@ describe("lookup", () => {
 			let fresh = tree.build(html);
 			for (let id = 1; id < parsed.kind.length; id++) {
 				if (parsed.kind[id] !== tree.ELEMENT) continue;
-				let keys = values.pairs(parsed, id).filter((_, i) => i % 2 === 0);
+				let pairs = values.pairs(parsed, id);
+				let keys = pairs.filter((_, i) => i % 2 === 0);
 				let upper = keys.map((x) => x.toUpperCase());
 				for (let key of [...keys, ...upper, ...KEYS]) {
-					let expected = values.attribute(parsed, id, key);
-					expect(values.lookup(fresh, id, key)).toBe(expected);
-					expect(values.lookup(parsed, id, key)).toBe(expected);
+					let index = values.find(pairs, key);
+					let expected = index === -1 ? undefined : pairs[index + 1];
+					expect(values.attribute(fresh, id, key)).toBe(expected);
+					let cached = fresh.pairs?.[id];
+					expect(cached).toEqual(pairs);
+					expect(values.attribute(fresh, id, key)).toBe(expected);
+					expect(fresh.pairs?.[id]).toBe(cached);
 				}
-				expect(fresh.pairs[id]).toBeUndefined();
+				expect(fresh.attrs.every((attrs) => attrs === undefined)).toBe(true);
 			}
 		}
 	});
