@@ -274,6 +274,17 @@ describe("build()", () => {
 		}
 	});
 
+	test("final columns own separate, exact-sized buffers", () => {
+		let t = tree.build("<div><p>a</p><p>b</p></div>");
+		let columns = [t.kind, t.parent, t.stop, t.start, t.end, t.from, t.to, t.head];
+		expect(new Set(columns.map((x) => x.buffer)).size).toBe(columns.length);
+		for (let column of columns) {
+			expect(column.length).toBe(t.kind.length);
+			expect(column.byteOffset).toBe(0);
+			expect(column.buffer.byteLength).toBe(column.byteLength);
+		}
+	});
+
 	test("builds the same tree after any other build", () => {
 		let columns = (t: tree.Tree) =>
 			JSON.stringify(

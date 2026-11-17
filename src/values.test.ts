@@ -62,6 +62,26 @@ describe("spans", () => {
 	});
 });
 
+describe("attribute caches", () => {
+	test("allocates each cache only when needed, and keeps it tree-local", () => {
+		let t = tree.build('<x a="&amp;"></x><y b="2"></y>');
+		let other = tree.build('<x a="other"></x>');
+		expect(t.pairs).toBeUndefined();
+		expect(t.attrs).toBeUndefined();
+		expect(values.attribute(t, 1, "a")).toBe("&");
+		expect(t.pairs?.length).toBe(t.kind.length);
+		expect(t.attrs).toBeUndefined();
+		let attrs = values.attributes(t, 1);
+		expect(attrs).toEqual({ a: "&" });
+		expect(Object.isFrozen(attrs)).toBe(true);
+		expect(values.attributes(t, 1)).toBe(attrs);
+		expect(values.attributes(t, 2)).toEqual({ b: "2" });
+		expect(other.pairs).toBeUndefined();
+		expect(other.attrs).toBeUndefined();
+		expect(values.attribute(other, 1, "a")).toBe("other");
+	});
+});
+
 describe("attribute", () => {
 	test("reads values from cached pairs without building attribute records", () => {
 		let sources = HEADS.flatMap((head) =>
@@ -84,7 +104,7 @@ describe("attribute", () => {
 					expect(values.attribute(fresh, id, key)).toBe(expected);
 					expect(fresh.pairs?.[id]).toBe(cached);
 				}
-				expect(fresh.attrs.every((attrs) => attrs === undefined)).toBe(true);
+				expect(fresh.attrs).toBeUndefined();
 			}
 		}
 	});

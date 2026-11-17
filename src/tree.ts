@@ -1,4 +1,4 @@
-import { intern, table } from "./names";
+import { read as readName, end as nameStop, same, table } from "./names";
 
 export const DOCUMENT = 0;
 export const ELEMENT = 1;
@@ -33,10 +33,10 @@ export type Tree = {
 	to: Int32Array;
 	/** Where the attribute segment of an element begins. */
 	head: Int32Array;
-	/** Parsed attributes as `[name, value, ...]`, filled on first read. */
-	pairs: (string[] | undefined)[];
-	/** Frozen attribute records, filled on first read of `attributes`. */
-	attrs: (Readonly<Record<string, string>> | undefined)[];
+	/** Parsed attributes as `[name, value, ...]`; the cache is allocated on first read. */
+	pairs: (string[] | undefined)[] | undefined;
+	/** Frozen attribute records; the cache is allocated on first read of `attributes`. */
+	attrs: (Readonly<Record<string, string>> | undefined)[] | undefined;
 	/** Element ids by tag name, built on first query. */
 	tags: Map<string, number[]> | undefined;
 	/** The source was parsed as foreign content, like the inside of `<svg>`. */
@@ -261,21 +261,6 @@ function isSpace(c: number): boolean {
 	return c === 32 || c === 9 || c === 10 || c === 13 || c === 12;
 }
 
-/**
- * Where a tag name that starts at `from` ends: at a space, `/`, `>`, or the
- * end of the source.
- */
-function nameEnd(source: string, from: number): number {
-	let n = source.length;
-	let j = from;
-	while (j < n) {
-		let c = source.charCodeAt(j);
-		if (isSpace(c) || c === 62 || c === 47) break;
-		j++;
-	}
-	return j;
-}
-
 /** Whether the last tag read by {@link tagEnd} ended with `/>`, outside a value. */
 let slash = false;
 
@@ -406,7 +391,7 @@ function closing(source: string, name: string, from: number): number {
 	let at = from;
 	while ((at = source.indexOf("</", at)) !== -1) {
 		let tail = at + 2 + name.length;
-		if (source.slice(at + 2, tail).toLowerCase() === name) {
+		if (same(source, at + 2, name)) {
 			let next = source.charCodeAt(tail);
 			if (isSpace(next) || next === 62 || next === 47) {
 				return at;
@@ -552,7 +537,8 @@ export function build(source: string, foreign?: boolean): Tree {
 		if (c === 47) {
 			// Most end tags are like `</div>`, with `>` right after the name, so
 			// the name is read first, and `>` is only searched for if needed.
-			let j = nameEnd(source, lt + 2);
+			let name = readName(KNOWN, source, lt + 2);
+			let j = nameStop;
 			let e = source.charCodeAt(j) === 62 ? j : source.indexOf(">", j);
 			if (e === -1) {
 				if (lt + 2 >= n) break;
@@ -572,7 +558,6 @@ export function build(source: string, foreign?: boolean): Tree {
 				continue;
 			}
 
-			let name = intern(KNOWN, source, lt + 2, j);
 			let cased = SVG.get(name);
 			if (alien) name = cased ?? name;
 
@@ -616,7 +601,8 @@ export function build(source: string, foreign?: boolean): Tree {
 			continue;
 		}
 
-		let j = nameEnd(source, lt + 2);
+		let name = readName(KNOWN, source, lt + 1);
+		let j = nameStop;
 
 		let k = tagEnd(source, j);
 		if (k === -1) {
@@ -628,7 +614,6 @@ export function build(source: string, foreign?: boolean): Tree {
 		flush(lt);
 		i = text = k;
 
-		let name = intern(KNOWN, source, lt + 1, j);
 		if (alien) name = SVG.get(name) ?? name;
 		else if (name === "image") name = "img";
 
@@ -672,29 +657,19 @@ export function build(source: string, foreign?: boolean): Tree {
 			? { kind, parent, stop, start, end, from, to, head }
 			: taken;
 
-	// One buffer for every column of the tree, numbers first, so each is aligned.
-	let buffer = new ArrayBuffer(size * 29);
-	let copy = (column: Int32Array, index: number): Int32Array => {
-		let output = new Int32Array(buffer, index * size * 4, size);
-		output.set(column.subarray(0, size));
-		return output;
-	};
-	let kinds = new Uint8Array(buffer, size * 28, size);
-	kinds.set(kind.subarray(0, size));
-
 	return {
 		source,
-		kind: kinds,
+		kind: kind.slice(0, size),
 		name: names,
-		parent: copy(parent, 0),
-		stop: copy(stop, 1),
-		start: copy(start, 2),
-		end: copy(end, 3),
-		from: copy(from, 4),
-		to: copy(to, 5),
-		head: copy(head, 6),
-		pairs: new Array(size),
-		attrs: new Array(size),
+		parent: parent.slice(0, size),
+		stop: stop.slice(0, size),
+		start: start.slice(0, size),
+		end: end.slice(0, size),
+		from: from.slice(0, size),
+		to: to.slice(0, size),
+		head: head.slice(0, size),
+		pairs: undefined,
+		attrs: undefined,
 		tags: undefined,
 		foreign: base,
 		strays,
